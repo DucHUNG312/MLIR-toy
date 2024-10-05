@@ -211,6 +211,8 @@ def ReshapeOp : Toy_Op<"reshape"> {
     let assemblyFormat = [{
         `(` $input `:` type($input) `)` attr-dict `to` type(results)
     }];
+
+    let hasCanonicalizer = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -276,4 +278,6 @@ def TransposeOp : Toy_Op<"transpose"> {
 
     // Invoke a static verify method to verify this transpose operation.
     let hasVerifier = 1;
+
+    let hasCanonicalizer = 1;
 }

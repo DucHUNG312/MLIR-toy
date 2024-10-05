@@ -3,4 +3,5 @@ add_toy_library(toyMLIR
     Parser.cpp
     Dialect.cpp
     MLIRGen.cpp
+    ToyCombine.cpp
     )
