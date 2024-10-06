@@ -6,6 +6,8 @@
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "toy/CastOpInterface.h"
+#include "toy/ShapeInferenceInterface.h"
 
 #include "toy/Dialect.h.inc"
 

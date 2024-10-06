@@ -31,7 +31,7 @@
 *.out
 *.app
 
-*.cache
+*.cache/
 *.vscode/
 log/
 build/

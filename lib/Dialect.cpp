@@ -3,27 +3,72 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Location.h"
 #include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/Operation.h"
 #include "mlir/IR/OperationSupport.h"
-#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/InliningUtils.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
+#include <cassert>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/Operation.h>
+#include <mlir/IR/TypeRange.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 
 #include "Dialect.cpp.inc"
 
 namespace toy {
+
+struct ToyInlinerInterface : public mlir::DialectInlinerInterface {
+  using mlir::DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(mlir::Operation *Call, mlir::Operation *Callable,
+                       bool WouldBeCloned) const final {
+    return true;
+  }
+
+  bool isLegalToInline(mlir::Operation *, mlir::Region *, bool,
+                       mlir::IRMapping &) const final {
+    return true;
+  }
+
+  bool isLegalToInline(mlir::Region *Dest, mlir::Region *Src,
+                       bool WouldBeCloned,
+                       mlir::IRMapping &ValueMapping) const final {
+    return true;
+  }
+
+  void handleTerminator(mlir::Operation *Op,
+                        mlir::ValueRange ValuesToRepl) const final {
+    auto RetOp = llvm::cast<ReturnOp>(Op);
+    assert(RetOp.getNumOperands() == ValuesToRepl.size());
+    for (const auto &It : llvm::enumerate(RetOp.getOperands())) {
+      ValuesToRepl[It.index()].replaceAllUsesWith(It.value());
+    }
+  }
+
+  mlir::Operation *
+  materializeCallConversion(mlir::OpBuilder &Builder, mlir::Value Input,
+                            mlir::Type ResultType,
+                            mlir::Location ConversionLoc) const final {
+    return Builder.create<CastOp>(ConversionLoc, ResultType, Input);
+  }
+};
 
 void ToyDialect::initialize() {
   addOperations<
 #define GET_OP_LIST
 #include "Ops.cpp.inc"
       >();
+  addInterfaces<ToyInlinerInterface>();
 }
 
 /// A generalized parser for binary operations. This parses the different forms
@@ -163,6 +208,32 @@ llvm::LogicalResult AddOp::verify() {
   return mlir::success();
 }
 
+void AddOp::inferShapes() { getResult().setType(getLhs().getType()); }
+
+//===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+
+/// Infer the output shape of the CastOp, this is required by the shape
+/// inference interface.
+void CastOp::inferShapes() { getResult().setType(getInput().getType()); }
+
+/// Returns true if the given set of input and result types are compatible with
+/// this cast operation. This is required by the `CastOpInterface` to verify
+/// this operation and provide other additional utilities.
+bool CastOp::areCastCompatible(mlir::TypeRange Inputs,
+                               mlir::TypeRange Outputs) {
+  if (Inputs.size() != 1 || Outputs.size() != 1) {
+    return false;
+  }
+  mlir::TensorType Input = llvm::dyn_cast<mlir::TensorType>(Inputs.front());
+  mlir::TensorType Output = llvm::dyn_cast<mlir::TensorType>(Outputs.front());
+  if (!Input || !Output || Input.getElementType() != Output.getElementType()) {
+    return false;
+  }
+  return !Input.hasRank() || !Output.hasRank() || Input == Output;
+}
+
 //===----------------------------------------------------------------------===//
 // GenericCallOp
 //===----------------------------------------------------------------------===//
@@ -174,6 +245,22 @@ void GenericCallOp::build(mlir::OpBuilder &Builder, mlir::OperationState &State,
   State.addOperands(Args);
   State.addAttribute("callee",
                      mlir::SymbolRefAttr::get(Builder.getContext(), Callee));
+}
+
+mlir::CallInterfaceCallable GenericCallOp::getCallableForCallee() {
+  return (*this)->getAttrOfType<mlir::SymbolRefAttr>("callee");
+}
+
+void GenericCallOp::setCalleeFromCallable(mlir::CallInterfaceCallable Callee) {
+  (*this)->setAttr("callee", Callee.get<mlir::SymbolRefAttr>());
+}
+
+mlir::Operation::operand_range GenericCallOp::getArgOperands() {
+  return getInputs();
+}
+
+mlir::MutableOperandRange GenericCallOp::getArgOperandsMutable() {
+  return getInputsMutable();
 }
 
 //===----------------------------------------------------------------------===//
@@ -228,6 +315,8 @@ mlir::ParseResult MulOp::parse(mlir::OpAsmParser &Parser,
 }
 
 void MulOp::print(mlir::OpAsmPrinter &P) { printBinaryOp(P, *this); }
+
+void MulOp::inferShapes() { getResult().setType(getLhs().getType()); }
 
 //===----------------------------------------------------------------------===//
 // ReturnOp
@@ -291,6 +380,13 @@ llvm::LogicalResult TransposeOp::verify() {
            << "expected result shape to be a transpose of the input";
   }
   return mlir::success();
+}
+
+void TransposeOp::inferShapes() {
+  auto ArrayTy = llvm::cast<mlir::RankedTensorType>(getOperand().getType());
+  llvm::SmallVector<int64_t, 2> Dims(llvm::reverse(ArrayTy.getShape()));
+  getResult().setType(
+      mlir::RankedTensorType::get(Dims, ArrayTy.getElementType()));
 }
 
 } // namespace toy

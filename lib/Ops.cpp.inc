@@ -11,6 +11,7 @@
 #undef GET_OP_LIST
 
 ::toy::AddOp,
+::toy::CastOp,
 ::toy::ConstantOp,
 ::toy::FuncOp,
 ::toy::GenericCallOp,
@@ -211,8 +212,139 @@ void AddOp::build(::mlir::OpBuilder &, ::mlir::OperationState &odsState, ::mlir:
   return ::mlir::failure();
 }
 
+void AddOp::getEffects(::llvm::SmallVectorImpl<::mlir::SideEffects::EffectInstance<::mlir::MemoryEffects::Effect>> &effects) {
+}
+
 } // namespace toy
 MLIR_DEFINE_EXPLICIT_TYPE_ID(::toy::AddOp)
+
+namespace toy {
+
+//===----------------------------------------------------------------------===//
+// ::toy::CastOp definitions
+//===----------------------------------------------------------------------===//
+
+namespace detail {
+} // namespace detail
+CastOpAdaptor::CastOpAdaptor(CastOp op) : CastOpGenericAdaptor(op->getOperands(), op) {}
+
+::llvm::LogicalResult CastOpAdaptor::verify(::mlir::Location loc) {
+  return ::mlir::success();
+}
+
+void CastOp::build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, ::mlir::Type output, ::mlir::Value input) {
+  odsState.addOperands(input);
+  odsState.addTypes(output);
+}
+
+void CastOp::build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, ::mlir::TypeRange resultTypes, ::mlir::Value input) {
+  odsState.addOperands(input);
+  assert(resultTypes.size() == 1u && "mismatched number of results");
+  odsState.addTypes(resultTypes);
+}
+
+void CastOp::build(::mlir::OpBuilder &, ::mlir::OperationState &odsState, ::mlir::TypeRange resultTypes, ::mlir::ValueRange operands, ::llvm::ArrayRef<::mlir::NamedAttribute> attributes) {
+  assert(operands.size() == 1u && "mismatched number of parameters");
+  odsState.addOperands(operands);
+  odsState.addAttributes(attributes);
+  assert(resultTypes.size() == 1u && "mismatched number of return types");
+  odsState.addTypes(resultTypes);
+}
+
+::llvm::LogicalResult CastOp::verifyInvariantsImpl() {
+  {
+    unsigned index = 0; (void)index;
+    auto valueGroup0 = getODSOperands(0);
+
+    for (auto v : valueGroup0) {
+      if (::mlir::failed(__mlir_ods_local_type_constraint_Ops1(*this, v.getType(), "operand", index++)))
+        return ::mlir::failure();
+    }
+  }
+  {
+    unsigned index = 0; (void)index;
+    auto valueGroup0 = getODSResults(0);
+
+    for (auto v : valueGroup0) {
+      if (::mlir::failed(__mlir_ods_local_type_constraint_Ops1(*this, v.getType(), "result", index++)))
+        return ::mlir::failure();
+    }
+  }
+  return ::mlir::success();
+}
+
+::llvm::LogicalResult CastOp::verifyInvariants() {
+  return verifyInvariantsImpl();
+}
+
+::mlir::ParseResult CastOp::parse(::mlir::OpAsmParser &parser, ::mlir::OperationState &result) {
+  ::mlir::OpAsmParser::UnresolvedOperand inputRawOperand{};
+  ::llvm::ArrayRef<::mlir::OpAsmParser::UnresolvedOperand> inputOperands(&inputRawOperand, 1);  ::llvm::SMLoc inputOperandsLoc;
+  (void)inputOperandsLoc;
+  ::mlir::Type inputRawType{};
+  ::llvm::ArrayRef<::mlir::Type> inputTypes(&inputRawType, 1);
+  ::mlir::Type outputRawType{};
+  ::llvm::ArrayRef<::mlir::Type> outputTypes(&outputRawType, 1);
+
+  inputOperandsLoc = parser.getCurrentLocation();
+  if (parser.parseOperand(inputRawOperand))
+    return ::mlir::failure();
+  {
+    auto loc = parser.getCurrentLocation();(void)loc;
+    if (parser.parseOptionalAttrDict(result.attributes))
+      return ::mlir::failure();
+  }
+  if (parser.parseColon())
+    return ::mlir::failure();
+
+  {
+    ::mlir::TensorType type;
+    if (parser.parseCustomTypeWithFallback(type))
+      return ::mlir::failure();
+    inputRawType = type;
+  }
+  if (parser.parseKeyword("to"))
+    return ::mlir::failure();
+
+  {
+    ::mlir::TensorType type;
+    if (parser.parseCustomTypeWithFallback(type))
+      return ::mlir::failure();
+    outputRawType = type;
+  }
+  result.addTypes(outputTypes);
+  if (parser.resolveOperands(inputOperands, inputTypes, inputOperandsLoc, result.operands))
+    return ::mlir::failure();
+  return ::mlir::success();
+}
+
+void CastOp::print(::mlir::OpAsmPrinter &_odsPrinter) {
+  _odsPrinter << ' ';
+  _odsPrinter << getInput();
+  ::llvm::SmallVector<::llvm::StringRef, 2> elidedAttrs;
+  _odsPrinter.printOptionalAttrDict((*this)->getAttrs(), elidedAttrs);
+  _odsPrinter << ' ' << ":";
+  _odsPrinter << ' ';
+  {
+    auto type = getInput().getType();
+    if (auto validType = ::llvm::dyn_cast<::mlir::TensorType>(type))
+      _odsPrinter.printStrippedAttrOrType(validType);
+   else
+     _odsPrinter << type;
+  }
+  _odsPrinter << ' ' << "to";
+  _odsPrinter << ' ';
+  {
+    auto type = getOutput().getType();
+    if (auto validType = ::llvm::dyn_cast<::mlir::TensorType>(type))
+      _odsPrinter.printStrippedAttrOrType(validType);
+   else
+     _odsPrinter << type;
+  }
+}
+
+} // namespace toy
+MLIR_DEFINE_EXPLICIT_TYPE_ID(::toy::CastOp)
 
 namespace toy {
 
@@ -383,6 +515,9 @@ void ConstantOp::build(::mlir::OpBuilder &, ::mlir::OperationState &odsState, ::
   if(::mlir::succeeded(verifyInvariantsImpl()) && ::mlir::succeeded(verify()))
     return ::mlir::success();
   return ::mlir::failure();
+}
+
+void ConstantOp::getEffects(::llvm::SmallVectorImpl<::mlir::SideEffects::EffectInstance<::mlir::MemoryEffects::Effect>> &effects) {
 }
 
 } // namespace toy
@@ -1076,6 +1211,9 @@ void MulOp::build(::mlir::OpBuilder &, ::mlir::OperationState &odsState, ::mlir:
   return verifyInvariantsImpl();
 }
 
+void MulOp::getEffects(::llvm::SmallVectorImpl<::mlir::SideEffects::EffectInstance<::mlir::MemoryEffects::Effect>> &effects) {
+}
+
 } // namespace toy
 MLIR_DEFINE_EXPLICIT_TYPE_ID(::toy::MulOp)
 
@@ -1293,6 +1431,9 @@ void ReshapeOp::print(::mlir::OpAsmPrinter &_odsPrinter) {
   _odsPrinter << ' ' << "to";
   _odsPrinter << ' ';
   _odsPrinter << getOperation()->getResultTypes();
+}
+
+void ReshapeOp::getEffects(::llvm::SmallVectorImpl<::mlir::SideEffects::EffectInstance<::mlir::MemoryEffects::Effect>> &effects) {
 }
 
 } // namespace toy
@@ -1551,6 +1692,9 @@ void TransposeOp::print(::mlir::OpAsmPrinter &_odsPrinter) {
   _odsPrinter << ' ' << "to";
   _odsPrinter << ' ';
   _odsPrinter << getOperation()->getResultTypes();
+}
+
+void TransposeOp::getEffects(::llvm::SmallVectorImpl<::mlir::SideEffects::EffectInstance<::mlir::MemoryEffects::Effect>> &effects) {
 }
 
 } // namespace toy

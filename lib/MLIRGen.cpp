@@ -159,6 +159,10 @@ private:
           Function.getFunctionType().getInputs(), getType(VarType{})));
     }
 
+    if (FuncAst.getProto()->getName() != "main") {
+      Function.setPrivate();
+    }
+
     return Function;
   }
 

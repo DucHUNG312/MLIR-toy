@@ -4,4 +4,5 @@ add_toy_library(toyMLIR
     Dialect.cpp
     MLIRGen.cpp
     ToyCombine.cpp
+    ShapeInferencePass.cpp
     )
